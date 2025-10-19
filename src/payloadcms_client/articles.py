@@ -43,11 +43,26 @@ def _slugify_path(value: str) -> str:
 
 @dataclass(slots=True)
 class ArticlePayloadBuilder:
-    """Builds request payloads for creating or updating articles."""
+    """Builds request payloads for creating or updating articles.
+    
+    Parameters
+    ----------
+    slug_field : str
+        Field name for the article slug. Default: "slug"
+    body_field : str
+        Field name for the article body content. Default: "content"
+    defaults : Mapping[str, Any]
+        Default field values to include in every payload. Default: {}
+    convert_to_lexical : bool
+        If True, converts HTML to Lexical editor format. If False (default),
+        stores raw HTML. Use False for simpler setup with a text/textarea/code
+        field, then render with dangerouslySetInnerHTML on frontend. Default: False
+    """
 
     slug_field: str = "slug"
     body_field: str = "content"
     defaults: Mapping[str, Any] = field(default_factory=dict)
+    convert_to_lexical: bool = False
 
     def build(self, document: ArticleDocument) -> Tuple[str, Dict[str, Any]]:
         """Return a ``(slug, payload)`` tuple for the provided document."""
@@ -69,7 +84,15 @@ class ArticlePayloadBuilder:
             slug = slugify(title.strip())
             payload[self.slug_field] = slug
 
-        payload[self.body_field] = document.body.strip()
+        body_content = document.body.strip()
+        
+        if self.convert_to_lexical:
+            # Convert HTML to Lexical editor format (more complex)
+            from .html_to_lexical import html_to_lexical
+            payload[self.body_field] = html_to_lexical(body_content)
+        else:
+            # Store raw HTML (simpler approach - recommended)
+            payload[self.body_field] = body_content
 
         return slug, payload
 

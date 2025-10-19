@@ -114,10 +114,62 @@ or any other supported fields.
 
 ### Handling authentication
 
-Provide a `token` when instantiating `PayloadRESTClient` to include an
+#### Using the login method
+
+The client now supports authentication via the Payload CMS login API. You can authenticate in two ways:
+
+**1. Using environment variables (recommended):**
+
+Create a `.env` file in your project root:
+
+```env
+PAYLOAD_EMAIL=dev@payloadcms.com
+PAYLOAD_PASSWORD=your_password
+PAYLOAD_URL=http://localhost:3000
+```
+
+Then use the `login()` method:
+
+```python
+from payloadcms_client import PayloadRESTClient
+
+client = PayloadRESTClient(base_url="http://localhost:3000")
+response = client.login()  # Automatically loads credentials from .env
+
+print(f"Authenticated as: {response['user']['email']}")
+print(f"Token expires: {response['exp']}")
+# Token is now stored in client.token and will be used for all subsequent requests
+```
+
+**2. Passing credentials directly:**
+
+```python
+client = PayloadRESTClient(base_url="http://localhost:3000")
+response = client.login(
+    email="dev@payloadcms.com",
+    password="your_password",
+    user_collection="users"  # default is "users"
+)
+```
+
+The `login()` method:
+- Makes a POST request to `/api/{user-collection}/login`
+- Stores the returned token in `client.token` for subsequent requests
+- Returns the full response including user info, token, and expiration time
+
+#### Using a pre-existing token
+
+Alternatively, provide a `token` when instantiating `PayloadRESTClient` to include an
 `Authorization` header with every request. The default token type is `Bearer`,
 which suits standard REST API keys. If your Payload project expects JWT-based
 headers (`JWT <token>`), pass `token_type="JWT"` to the client.
+
+```python
+client = PayloadRESTClient(
+    base_url="https://your-payload-instance.com",
+    token="<your-api-token>",
+)
+```
 
 ### Error handling
 

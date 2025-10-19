@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, Dict, Mapping, MutableMapping, Optional
 from urllib.parse import urljoin
 
 import requests
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore
 
 
 class PayloadRESTClient:
@@ -28,6 +34,75 @@ class PayloadRESTClient:
         self.timeout = timeout
         self.session = session or requests.Session()
         self.api_prefix = api_prefix.strip("/")
+
+    # ------------------------------------------------------------------
+    # Authentication
+    # ------------------------------------------------------------------
+    def login(
+        self,
+        email: str | None = None,
+        password: str | None = None,
+        *,
+        user_collection: str = "users",
+        load_env: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Authenticate with Payload CMS and store the token.
+        
+        If email/password are not provided, attempts to load them from environment
+        variables PAYLOAD_EMAIL and PAYLOAD_PASSWORD (optionally loading from .env file).
+        
+        Args:
+            email: User email. If None, reads from PAYLOAD_EMAIL env var.
+            password: User password. If None, reads from PAYLOAD_PASSWORD env var.
+            user_collection: The user collection slug (default: "users").
+            load_env: Whether to load .env file if python-dotenv is available (default: True).
+        
+        Returns:
+            The full response dict including 'token', 'user', 'message', and 'exp'.
+        
+        Raises:
+            ValueError: If credentials are not provided and not found in environment.
+            requests.HTTPError: If authentication fails.
+        """
+        # Load .env file if available
+        if load_env and load_dotenv is not None:
+            load_dotenv()
+        
+        # Get credentials from parameters or environment
+        if email is None:
+            email = os.getenv("PAYLOAD_EMAIL")
+        if password is None:
+            password = os.getenv("PAYLOAD_PASSWORD")
+        
+        if not email or not password:
+            raise ValueError(
+                "Email and password must be provided either as arguments or via "
+                "PAYLOAD_EMAIL and PAYLOAD_PASSWORD environment variables."
+            )
+        
+        # Make login request
+        url = self._build_url(f"{user_collection}/login")
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        
+        response = self.session.post(
+            url,
+            headers=headers,
+            json={"email": email, "password": password},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Store the token for subsequent requests
+        if "token" in data:
+            self.token = data["token"]
+        
+        return data
 
     # ------------------------------------------------------------------
     # Internal helpers
