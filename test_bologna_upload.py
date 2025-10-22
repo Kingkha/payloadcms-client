@@ -16,10 +16,10 @@ def main():
     print("=" * 70)
     
     # Article and image paths
-    article_path = "/Users/hiepnguyen/mywork/scrapbot-article-creator/city_sightseeing_itinerary/italy/bologna/articles/bologna-2-day-itinerary.html"
+    article_path = "../scrapbot-article-creator/city_sightseeing_itinerary/italy/bologna/articles/bologna-2-day-itinerary.html"
     # Point media_root to the bologna directory (parent of images)
     # Since the featured image path is "/images/bologna-2-day-itinerary.webp"
-    media_root = "/Users/hiepnguyen/mywork/scrapbot-article-creator/city_sightseeing_itinerary/italy/bologna"
+    media_root = "../scrapbot-article-creator/city_sightseeing_itinerary/italy/bologna"
     
     # Verify files exist
     if not Path(article_path).exists():
@@ -77,28 +77,14 @@ def main():
         print("  - Handling featured image")
         print("  - Upserting to CMS...")
         
-        # Parse the article to show the Lexical data
-        from payloadcms_client.file_parser import parse_article_file
-        from payloadcms_client.html_to_lexical import html_to_lexical
-        
-        article_path_obj = Path(article_path)
-        document = parse_article_file(article_path_obj)
-        lexical_data = html_to_lexical(document.body.strip())
-        
-        print("\n" + "=" * 70)
-        print("LEXICAL DATA TO BE UPLOADED")
-        print("=" * 70)
-        import json
-        print(json.dumps(lexical_data, indent=2))
-        print("=" * 70)
-        
         response = upload_article_from_file(
             client=client,
             collection="posts",
             file_path=article_path,
             builder=builder,
             depth=1,
-            featured_image_field="featuredImage",
+            featured_image_field="featuredImage",  # Field name in article YAML
+            featured_image_output_field="heroImage",  # Field name in PayloadCMS schema
             media_collection="media",
             media_root=media_root,  # Look for images here
             media_defaults={

@@ -191,6 +191,7 @@ def upload_article_from_file(
     builder: ArticlePayloadBuilder | None = None,
     depth: int | None = None,
     featured_image_field: str = "featuredImage",
+    featured_image_output_field: str | None = None,
     media_collection: str = "media",
     media_root: str | Path | None = None,
     media_defaults: Mapping[str, Any] | None = None,
@@ -219,6 +220,11 @@ def upload_article_from_file(
         referenced file is uploaded to the media collection and the field is
         replaced with the uploaded document ID. Pass ``None`` to disable
         automatic media handling.
+    featured_image_output_field:
+        Optional name to rename the featured image field to after processing.
+        Useful when your article YAML uses one field name (e.g. 'featuredImage')
+        but your PayloadCMS schema expects a different name (e.g. 'heroImage').
+        If None, keeps the original field name.
     media_collection:
         Payload collection name used for storing media uploads. Defaults to
         ``"media"``.
@@ -258,7 +264,7 @@ def upload_article_from_file(
             payload[builder.slug_field] = slug
 
     if featured_image_field and featured_image_field in payload:
-        payload[featured_image_field] = _ensure_featured_image(
+        media_id = _ensure_featured_image(
             client,
             featured_value=payload[featured_image_field],
             article_path=article_path,
@@ -268,6 +274,13 @@ def upload_article_from_file(
             filename_field=media_filename_field,
             depth=media_depth,
         )
+        
+        # If output field is different, remove old field and use new one
+        if featured_image_output_field and featured_image_output_field != featured_image_field:
+            del payload[featured_image_field]
+            payload[featured_image_output_field] = media_id
+        else:
+            payload[featured_image_field] = media_id
 
     return client.upsert_by_field(
         collection=collection,

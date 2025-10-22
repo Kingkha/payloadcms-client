@@ -189,20 +189,30 @@ class PayloadRESTClient:
         self,
         collection: str,
         payload: Mapping[str, Any],
+        *,
+        depth: int | None = None,
     ) -> Dict[str, Any]:
         """Create a new document in the collection."""
 
-        return self._request("POST", f"{collection}", json=payload)
+        params: Dict[str, Any] = {}
+        if depth is not None:
+            params["depth"] = depth
+        return self._request("POST", f"{collection}", json=payload, params=params or None)
 
     def update_document(
         self,
         collection: str,
         doc_id: Any,
         payload: Mapping[str, Any],
+        *,
+        depth: int | None = None,
     ) -> Dict[str, Any]:
         """Update an existing document by ``id``."""
 
-        return self._request("PATCH", f"{collection}/{doc_id}", json=payload)
+        params: Dict[str, Any] = {}
+        if depth is not None:
+            params["depth"] = depth
+        return self._request("PATCH", f"{collection}/{doc_id}", json=payload, params=params or None)
 
     def upsert_by_field(
         self,
@@ -227,8 +237,8 @@ class PayloadRESTClient:
                 raise ValueError(
                     "Existing document is missing an 'id' field required for updates."
                 )
-            return self.update_document(collection, doc_id, payload)
-        return self.create_document(collection, payload)
+            return self.update_document(collection, doc_id, payload, depth=depth)
+        return self.create_document(collection, payload, depth=depth)
 
     def upload_media(
         self,
