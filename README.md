@@ -98,6 +98,33 @@ custom collection) and the article payload is updated to reference the media
 document ID automatically. Configure ``media_root`` when featured image paths
 need to be resolved relative to a specific directory.
 
+Companion fields such as ``featuredImageAlt`` and ``featuredImageCaption`` are
+automatically extracted from the article's front matter and transferred to the
+media document as ``alt`` and ``caption`` fields. These companion fields are
+then removed from the article payload to avoid duplication. For example:
+
+```yaml
+---
+title: Beautiful Lake Como
+featuredImage: /images/lake-como.jpg
+featuredImageAlt: Aerial view of Lake Como at sunset
+featuredImageCaption: Lake Como, Northern Italy
+author: Travel Editor
+---
+```
+
+If ``featuredImageAlt`` or ``featuredImageCaption`` are not provided, the system
+automatically uses the image filename (cleaned and formatted) as a fallback for
+both fields. For instance, ``lake-como-sunset.jpg`` becomes ``"Lake Como Sunset"``.
+
+The media document will be created/updated with ``alt`` and ``caption`` fields,
+while the article will only reference the media ID through ``featuredImage``.
+
+**⚠️ Important:** Your Payload CMS media collection schema must include ``alt``
+and ``caption`` fields for them to be saved. The ``caption`` field is automatically
+converted to Lexical richText format if your schema uses it. See
+``PAYLOAD_CMS_MEDIA_SCHEMA.md`` for schema setup instructions.
+
 Use ``upload_articles_from_directory`` to scan a directory tree for HTML files
 with front matter. Each article is uploaded using ``upload_article_from_file``
 and its slug is automatically prefixed by the relative folder structure (e.g.

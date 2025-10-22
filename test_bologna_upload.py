@@ -87,9 +87,7 @@ def main():
             featured_image_output_field="heroImage",  # Field name in PayloadCMS schema
             media_collection="media",
             media_root=media_root,  # Look for images here
-            media_defaults={
-                "alt": "Bologna travel guide cover image",
-            },
+            media_defaults={},  # Empty - will use filename fallback for alt/caption
             media_depth=0,
             slug_prefix="italy/bologna",  # Add location prefix to slug
         )

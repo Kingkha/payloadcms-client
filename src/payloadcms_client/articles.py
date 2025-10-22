@@ -103,6 +103,41 @@ def _prepare_media_payload(defaults: Mapping[str, Any] | None) -> Dict[str, Any]
     return dict(defaults)
 
 
+def _text_to_lexical(text: str) -> Dict[str, Any]:
+    """Convert plain text to Lexical editor format (for caption field)."""
+    return {
+        "root": {
+            "type": "root",
+            "format": "",
+            "indent": 0,
+            "version": 1,
+            "children": [
+                {
+                    "type": "paragraph",
+                    "format": "",
+                    "indent": 0,
+                    "version": 1,
+                    "children": [
+                        {
+                            "mode": "normal",
+                            "text": text,
+                            "type": "text",
+                            "style": "",
+                            "detail": 0,
+                            "format": 0,
+                            "version": 1,
+                        }
+                    ],
+                    "direction": None,
+                    "textFormat": 0,
+                    "textStyle": "",
+                }
+            ],
+            "direction": None,
+        }
+    }
+
+
 def _resolve_featured_image_path(
     value: str,
     article_path: Path,
@@ -138,6 +173,8 @@ def _ensure_featured_image(
     media_defaults: Mapping[str, Any] | None,
     filename_field: str,
     depth: int | None,
+    article_payload: Dict[str, Any] | None = None,
+    featured_image_field: str = "featuredImage",
 ) -> Any:
     if not isinstance(featured_value, str) or not featured_value.strip():
         return featured_value
@@ -164,11 +201,48 @@ def _ensure_featured_image(
             )
         return media_id
 
-    payload = _prepare_media_payload(media_defaults)
+    # Prepare upload payload and alt/caption separately
+    # Payload CMS requires alt/caption to be set via update after upload
+    upload_payload = {}
+    alt_caption_payload = {}
+    
+    # Separate alt/caption from other defaults
+    if media_defaults:
+        for key, value in media_defaults.items():
+            if key.lower() in ("alt", "caption"):
+                alt_caption_payload[key.lower()] = value
+            else:
+                upload_payload[key] = value
+    
+    # Extract companion fields from article payload (alt, caption, etc.)
+    if article_payload:
+        companion_fields = ["alt", "caption", "Alt", "Caption"]
+        for suffix in companion_fields:
+            companion_key = f"{featured_image_field}{suffix}"
+            if companion_key in article_payload:
+                # Use lowercase field names for media (standard convention)
+                media_field = suffix.lower()
+                alt_caption_payload[media_field] = article_payload[companion_key]
+    
+    # If alt or caption are still missing, use the filename as fallback
+    if "alt" not in alt_caption_payload or not alt_caption_payload["alt"]:
+        # Remove extension and convert underscores/hyphens to spaces
+        filename_without_ext = resolved_path.stem
+        readable_name = filename_without_ext.replace("-", " ").replace("_", " ")
+        # Capitalize first letter of each word
+        alt_caption_payload["alt"] = readable_name.title()
+    
+    if "caption" not in alt_caption_payload or not alt_caption_payload["caption"]:
+        # Use the same readable filename for caption
+        filename_without_ext = resolved_path.stem
+        readable_name = filename_without_ext.replace("-", " ").replace("_", " ")
+        alt_caption_payload["caption"] = readable_name.title()
+    
+    # Step 1: Upload the media file
     document = client.upload_media(
         media_collection,
         resolved_path,
-        data=payload,
+        data=upload_payload if upload_payload else None,
         depth=depth,
     )
     if isinstance(document, Mapping) and "doc" in document and isinstance(document["doc"], Mapping):
@@ -180,6 +254,24 @@ def _ensure_featured_image(
         raise ValueError(
             f"Uploaded media document for '{resolved_path.name}' is missing an 'id'."
         )
+    
+    # Step 2: Update with alt and caption fields
+    # Payload CMS requires this as a separate step - it doesn't accept these in multipart upload
+    if alt_caption_payload:
+        from .payload_client import PayloadRESTClient
+        if isinstance(client, PayloadRESTClient):
+            # Convert caption to Lexical format if it's a plain string
+            # (Payload CMS media schemas often use richText for caption)
+            if "caption" in alt_caption_payload and isinstance(alt_caption_payload["caption"], str):
+                alt_caption_payload["caption"] = _text_to_lexical(alt_caption_payload["caption"])
+            
+            client.update_document(
+                collection=media_collection,
+                doc_id=media_id,
+                payload=alt_caption_payload,
+                depth=depth,
+            )
+    
     return media_id
 
 
@@ -218,8 +310,12 @@ def upload_article_from_file(
         Name of the field within the payload that stores the featured image
         relationship. If the field is present and set to a string path, the
         referenced file is uploaded to the media collection and the field is
-        replaced with the uploaded document ID. Pass ``None`` to disable
-        automatic media handling.
+        replaced with the uploaded document ID. Companion fields (e.g.,
+        ``featuredImageAlt``, ``featuredImageCaption``) are automatically
+        extracted from the article payload and transferred to the media document,
+        then removed from the article. If companion fields are not provided, the
+        image filename (cleaned and formatted) is used as a fallback for both
+        ``alt`` and ``caption``. Pass ``None`` to disable automatic media handling.
     featured_image_output_field:
         Optional name to rename the featured image field to after processing.
         Useful when your article YAML uses one field name (e.g. 'featuredImage')
@@ -273,7 +369,16 @@ def upload_article_from_file(
             media_defaults=media_defaults,
             filename_field=media_filename_field,
             depth=media_depth,
+            article_payload=payload,
+            featured_image_field=featured_image_field,
         )
+        
+        # Remove companion fields from article payload after they've been transferred to media
+        companion_fields = ["alt", "caption", "Alt", "Caption"]
+        for suffix in companion_fields:
+            companion_key = f"{featured_image_field}{suffix}"
+            if companion_key in payload:
+                del payload[companion_key]
         
         # If output field is different, remove old field and use new one
         if featured_image_output_field and featured_image_output_field != featured_image_field:
