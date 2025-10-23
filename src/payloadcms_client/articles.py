@@ -71,6 +71,25 @@ class ArticlePayloadBuilder:
             raise TypeError("document.metadata must be a mapping")
 
         payload: Dict[str, Any] = {**self.defaults, **document.metadata}
+        
+        # Ensure author/authors and editor from defaults override metadata if they're numeric IDs
+        # (metadata might have string values like "Editor" which should be replaced with user IDs)
+        for field in ['author', 'authors', 'editor']:
+            if field in self.defaults:
+                default_value = self.defaults[field]
+                # Check if it's a numeric ID or list of numeric IDs
+                if isinstance(default_value, int):
+                    payload[field] = default_value
+                elif isinstance(default_value, str) and default_value.isdigit():
+                    payload[field] = default_value
+                elif isinstance(default_value, list):
+                    # For arrays like authors: [1, 2, 3]
+                    payload[field] = default_value
+        
+        # Remove singular 'author' field if 'authors' (plural) is set
+        # This avoids confusion when metadata has 'author' as a string
+        if 'authors' in payload and 'author' in payload:
+            del payload['author']
 
         slug_value = payload.get(self.slug_field)
         if isinstance(slug_value, str) and slug_value.strip():
@@ -397,9 +416,11 @@ def upload_article_from_file(
 
     if slug_prefix:
         normalized_prefix = _slugify_path(slug_prefix)
-        if normalized_prefix and not slug.startswith(f"{normalized_prefix}/") and slug != normalized_prefix:
-            slug = f"{normalized_prefix}/{slug.lstrip('/')}"
-            payload[builder.slug_field] = slug
+        # Generate slug from filename (without extension)
+        filename_slug = slugify(article_path.stem)
+        # Use hyphen instead of slash since PayloadCMS doesn't support nested slugs
+        slug = f"{normalized_prefix}-{filename_slug}"
+        payload[builder.slug_field] = slug
 
     # Handle categories/tags if specified
     if category_field and category_field in payload:

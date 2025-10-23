@@ -44,7 +44,9 @@ def main():
         # Authenticate
         print("\n🔐 Authenticating...")
         auth_response = client.login()
-        print(f"✓ Authenticated as: {auth_response['user']['email']}")
+        user_id = auth_response['user']['id']
+        user_email = auth_response['user']['email']
+        print(f"✓ Authenticated as: {user_email} (ID: {user_id})")
         
         # Create custom builder with default fields
         print("\n" + "-" * 70)
@@ -58,12 +60,14 @@ def main():
             body_field="content",
             defaults={
                 "status": "draft",  # Start as draft
+                "authors": [user_id],  # Set authenticated user as author (note: plural and array)
             },
             convert_to_lexical=True,  # Required for Lexical richText field
         )
         print("✓ Builder configured with 'content' field for body")
         print("  Storage mode: Lexical (converting HTML to Lexical format)")
         print("  Default status: draft")
+        print(f"  Default author & editor: {user_email}")
         
         # Upload the article
         print("\n" + "-" * 70)
@@ -91,7 +95,7 @@ def main():
             media_root=media_root,  # Look for images here
             media_defaults={},  # Empty - will use filename fallback for alt/caption
             media_depth=0,
-            slug_prefix="italy/bologna",  # Add location prefix to slug
+            slug_prefix="italy",  # Add country prefix to slug (format: country-filename)
             category_field="tags",  # Field name in article YAML
             category_output_field="categories",  # Field name in PayloadCMS schema
             category_collection="categories",  # Collection name for categories
@@ -115,7 +119,22 @@ def main():
         print(f"  Title:         {doc.get('title')}")
         print(f"  Slug:          {doc.get('slug')}")
         print(f"  Status:        {doc.get('_status', doc.get('status'))}")
-        print(f"  Author:        {doc.get('author')}")
+        
+        # Display authors (note: it's plural and an array)
+        authors = doc.get('authors', []) or doc.get('populatedAuthors', [])
+        if authors:
+            if isinstance(authors, list) and len(authors) > 0:
+                if isinstance(authors[0], dict):
+                    # Authors are populated
+                    author_names = [a.get('email', a.get('name', str(a))) for a in authors]
+                    print(f"  Authors:       {', '.join(author_names)}")
+                else:
+                    # Authors are just IDs
+                    print(f"  Authors:       {authors}")
+            else:
+                print(f"  Authors:       {authors}")
+        else:
+            print(f"  Authors:       None")
         
         # Show excerpt/description if available
         excerpt = doc.get('excerpt') or doc.get('metaDescription')

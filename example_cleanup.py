@@ -26,7 +26,7 @@ def main():
             categories_collection="categories",
             clean_posts=True,
             clean_media=True,
-            clean_categories=True,
+            clean_categories=False,
             verbose=True,  # Show detailed progress
         )
         print(f"\nDeleted: {results}")
