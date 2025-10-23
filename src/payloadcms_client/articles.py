@@ -693,16 +693,40 @@ def ensure_categories(
         slug = slugify(label)
         unique_categories.setdefault(slug, label)
 
+    # OPTIMIZATION: Batch lookup all categories at once (1 API call instead of N)
+    existing_docs = client.find_many_by_field(
+        collection=collection,
+        field=slug_field,
+        values=list(unique_categories.keys()),
+        depth=depth,
+    )
+
     results: List[Dict[str, Any]] = []
     for slug, label in unique_categories.items():
-        payload: Dict[str, Any] = {**defaults, slug_field: slug, label_field: label}
-        document = client.upsert_by_field(
-            collection=collection,
-            field=slug_field,
-            value=slug,
-            payload=payload,
-            depth=depth,
-        )
-        results.append(document)
+        if slug in existing_docs:
+            # Category exists - update it to ensure defaults are applied
+            existing = existing_docs[slug]
+            doc_id = existing.get("id")
+            if doc_id is None:
+                raise ValueError(
+                    f"Existing category document for slug '{slug}' is missing an 'id'."
+                )
+            payload: Dict[str, Any] = {**defaults, slug_field: slug, label_field: label}
+            document = client.update_document(
+                collection=collection,
+                doc_id=doc_id,
+                payload=payload,
+                depth=depth,
+            )
+            results.append(document)
+        else:
+            # Category doesn't exist - create it
+            payload: Dict[str, Any] = {**defaults, slug_field: slug, label_field: label}
+            document = client.create_document(
+                collection=collection,
+                payload=payload,
+                depth=depth,
+            )
+            results.append(document)
 
     return results

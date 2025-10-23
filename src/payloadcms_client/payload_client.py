@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Mapping, MutableMapping, Optional
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional
 from urllib.parse import urljoin
 
 import requests
@@ -184,6 +184,39 @@ class PayloadRESTClient:
         result = self.list_documents(collection, params=params)
         docs = result.get("docs") or []
         return docs[0] if docs else None
+
+    def find_many_by_field(
+        self,
+        collection: str,
+        field: str,
+        values: List[Any],
+        *,
+        depth: int | None = None,
+    ) -> Dict[Any, Dict[str, Any]]:
+        """Return documents whose ``field`` is in ``values``, indexed by field value.
+        
+        This is more efficient than calling find_first_by_field multiple times.
+        
+        Returns:
+            Dict mapping field values to documents. Missing values are not included.
+        """
+        if not values:
+            return {}
+        
+        # Build OR query: where[or][0][field][equals]=value1&where[or][1][field][equals]=value2
+        params: Dict[str, Any] = {}
+        for i, value in enumerate(values):
+            params[f"where[or][{i}][{field}][equals]"] = value
+        
+        if depth is not None:
+            params["depth"] = depth
+        
+        # Fetch all matching documents in one API call
+        result = self.list_documents(collection, params=params)
+        docs = result.get("docs") or []
+        
+        # Index by field value for quick lookup
+        return {doc.get(field): doc for doc in docs if doc.get(field) in values}
 
     def create_document(
         self,
