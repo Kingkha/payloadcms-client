@@ -240,6 +240,15 @@ class PayloadRESTClient:
             return self.update_document(collection, doc_id, payload, depth=depth)
         return self.create_document(collection, payload, depth=depth)
 
+    def delete_document(
+        self,
+        collection: str,
+        doc_id: Any,
+    ) -> Dict[str, Any]:
+        """Delete a document by ``id``."""
+
+        return self._request("DELETE", f"{collection}/{doc_id}")
+
     def upload_media(
         self,
         collection: str,

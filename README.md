@@ -203,6 +203,87 @@ client = PayloadRESTClient(
 Any non-2xx response from Payload CMS raises a `requests.HTTPError`. Wrap calls
 in your own error handling if you need custom retry or logging behaviour.
 
+### Cleaning PayloadCMS collections
+
+The package includes utilities to delete all documents from specified collections.
+This is useful for testing, resetting your development environment, or cleaning
+up before a fresh data import.
+
+#### Using the command-line script
+
+The `clean_payloadcms.py` script provides a convenient way to clean collections:
+
+```bash
+# Clean everything (posts, media, and categories)
+python clean_payloadcms.py
+
+# Clean only posts
+python clean_payloadcms.py --only-posts
+
+# Clean only media and categories (skip posts)
+python clean_payloadcms.py --skip-posts
+
+# Show detailed progress
+python clean_payloadcms.py --verbose
+
+# Use custom collection names
+python clean_payloadcms.py --posts articles --media files
+
+# Skip confirmation prompt
+python clean_payloadcms.py --yes
+
+# Specify credentials directly
+python clean_payloadcms.py --url https://example.com --email user@example.com --password secret
+```
+
+The script requires authentication and will use `PAYLOAD_EMAIL` and `PAYLOAD_PASSWORD`
+from your `.env` file by default.
+
+**⚠️ Warning:** This operation permanently deletes data and cannot be undone. The
+script will prompt for confirmation unless you pass the `--yes` flag.
+
+#### Using the cleanup function programmatically
+
+You can also use the cleanup functionality in your Python code:
+
+```python
+from payloadcms_client import PayloadRESTClient
+from clean_payloadcms import clean_payloadcms
+
+# Authenticate
+client = PayloadRESTClient(base_url="http://localhost:3000")
+client.login()
+
+# Clean everything
+results = clean_payloadcms(
+    client,
+    posts_collection="posts",
+    media_collection="media",
+    categories_collection="categories",
+    clean_posts=True,
+    clean_media=True,
+    clean_categories=True,
+    verbose=True,
+)
+
+print(f"Deleted {results['posts']} posts")
+print(f"Deleted {results['media']} media files")
+print(f"Deleted {results['categories']} categories")
+
+# Clean only specific collections
+results = clean_payloadcms(
+    client,
+    clean_posts=True,
+    clean_media=False,
+    clean_categories=False,
+)
+```
+
+The cleanup function processes collections in a safe order:
+1. **Posts first** – removed before media/categories to avoid orphaned references
+2. **Media** – removed after posts that might reference them
+3. **Categories** – removed last since they're often referenced by other collections
+
 ## Development
 
 ```bash

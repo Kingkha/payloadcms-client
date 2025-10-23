@@ -74,6 +74,8 @@ def main():
         print("  - Parsing YAML front matter")
         print("  - Processing HTML content")
         print("  - Converting HTML to Lexical format")
+        print("  - Creating hierarchical categories (Italy → Bologna)")
+        print("  - Skipping first 2 tags (Travel, Guide)")
         print("  - Handling featured image")
         print("  - Upserting to CMS...")
         
@@ -90,6 +92,14 @@ def main():
             media_defaults={},  # Empty - will use filename fallback for alt/caption
             media_depth=0,
             slug_prefix="italy/bologna",  # Add location prefix to slug
+            category_field="tags",  # Field name in article YAML
+            category_output_field="categories",  # Field name in PayloadCMS schema
+            category_collection="categories",  # Collection name for categories
+            category_slug_field="slug",  # Slug field in categories collection
+            category_label_field="title",  # Title field in categories collection
+            category_parent_field="parent",  # Parent field for hierarchy
+            category_skip_first=2,  # Skip "Travel" and "Guide", then Italy->Bologna
+            category_depth=1,  # Populate category details in response
         )
         
         # Display results
@@ -124,10 +134,36 @@ def main():
                 print(f"\n🖼️  Featured Image ID: {featured_image}")
         
         # Tags/Categories
-        tags = doc.get('tags', [])
+        tags = doc.get('tags', []) or doc.get('categories', [])
         if tags:
-            tag_list = [str(t) if isinstance(t, str) else t.get('name', t.get('title', str(t))) for t in tags]
-            print(f"\n🏷️  Tags: {', '.join(tag_list)}")
+            # Tags could be IDs (strings) or full objects with title/name
+            tag_list = []
+            for t in tags:
+                if isinstance(t, dict):
+                    # It's a populated object
+                    tag_list.append(t.get('name', t.get('title', str(t))))
+                elif isinstance(t, (str, int)):
+                    # It's just an ID
+                    tag_list.append(f"ID:{t}")
+                else:
+                    tag_list.append(str(t))
+            print(f"\n🏷️  Categories/Tags ({len(tag_list)}):")
+            for i, t in enumerate(tags, 1):
+                if isinstance(t, dict):
+                    title = t.get('title', t.get('name', 'N/A'))
+                    parent = t.get('parent')
+                    parent_info = ""
+                    if parent:
+                        if isinstance(parent, dict):
+                            parent_info = f" (child of: {parent.get('title', parent.get('id'))})"
+                        else:
+                            parent_info = f" (parent ID: {parent})"
+                    print(f"  {i}. {title}{parent_info}")
+                    print(f"     ID: {t.get('id')}, Slug: {t.get('slug')}")
+                elif isinstance(t, (str, int)):
+                    print(f"  {i}. ID: {t}")
+                else:
+                    print(f"  {i}. {t}")
         
         print(f"\n🔗 View in CMS: https://famoussights-sooty.vercel.app/admin/collections/posts/{doc.get('id')}")
         

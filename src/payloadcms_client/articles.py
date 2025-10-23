@@ -290,6 +290,15 @@ def upload_article_from_file(
     media_filename_field: str = "filename",
     media_depth: int | None = None,
     slug_prefix: str | None = None,
+    category_field: str | None = None,
+    category_output_field: str | None = None,
+    category_collection: str = "categories",
+    category_slug_field: str = "slug",
+    category_label_field: str = "title",
+    category_parent_field: str | None = None,
+    category_skip_first: int = 0,
+    category_defaults: Mapping[str, Any] | None = None,
+    category_depth: int | None = None,
 ) -> Dict[str, Any]:
     """Parse an article file and upsert it into Payload CMS.
 
@@ -341,6 +350,39 @@ def upload_article_from_file(
         article. Each component separated by ``/`` is slugified and prepended to
         the generated slug. Existing slugs that already begin with the prefix
         are left unchanged.
+    category_field:
+        Name of the field within the payload that contains category/tag values.
+        If present and the field value is a list of strings, each category name
+        is ensured to exist in the ``category_collection``, and the field is
+        replaced with a list of category IDs. Pass ``None`` to disable automatic
+        category handling. Common values: ``"tags"``, ``"categories"``.
+    category_output_field:
+        Optional name to rename the category field to after processing. Useful
+        when your article YAML uses one field name (e.g. 'tags') but your
+        PayloadCMS schema expects a different name (e.g. 'categories'). If None,
+        keeps the original field name.
+    category_collection:
+        Payload collection name used for storing categories/tags. Defaults to
+        ``"categories"``.
+    category_slug_field:
+        Field name used for the category slug. Defaults to ``"slug"``.
+    category_label_field:
+        Field name used for the category label/title. Defaults to ``"title"``.
+    category_parent_field:
+        Field name for parent relationship in category documents. If provided,
+        enables hierarchical category support where tag at index
+        ``category_skip_first + 1`` becomes a child of tag at index
+        ``category_skip_first``. For example, with ``skip_first=2``, tag[2]
+        (country) becomes parent of tag[3] (city). Pass ``None`` to disable.
+        Default: ``None``.
+    category_skip_first:
+        Number of tags to skip from the beginning of the tag list before
+        processing hierarchical relationships. For example, set to 2 to skip
+        generic tags like "Travel" and "Guide". Default: 0.
+    category_defaults:
+        Optional mapping of default fields merged into each category payload.
+    category_depth:
+        Optional depth parameter for category lookups or creation.
 
     Returns
     -------
@@ -358,6 +400,103 @@ def upload_article_from_file(
         if normalized_prefix and not slug.startswith(f"{normalized_prefix}/") and slug != normalized_prefix:
             slug = f"{normalized_prefix}/{slug.lstrip('/')}"
             payload[builder.slug_field] = slug
+
+    # Handle categories/tags if specified
+    if category_field and category_field in payload:
+        category_value = payload[category_field]
+        if isinstance(category_value, (list, tuple)):
+            # Extract string values only
+            category_names = [
+                item for item in category_value if isinstance(item, str)
+            ]
+            if category_names:
+                # Handle hierarchical categories if parent field is specified
+                if category_parent_field and len(category_names) > category_skip_first + 1:
+                    # Process parent category first (country)
+                    parent_index = category_skip_first
+                    parent_name = category_names[parent_index]
+                    
+                    # Create/fetch parent category
+                    parent_docs = ensure_categories(
+                        client,
+                        [parent_name],
+                        collection=category_collection,
+                        slug_field=category_slug_field,
+                        label_field=category_label_field,
+                        defaults=category_defaults,
+                        depth=category_depth,
+                    )
+                    
+                    # Get parent ID
+                    parent_doc = parent_docs[0]
+                    if isinstance(parent_doc, Mapping) and "doc" in parent_doc:
+                        parent_doc = parent_doc["doc"]
+                    parent_id = parent_doc.get("id") if isinstance(parent_doc, Mapping) else None
+                    
+                    # Process child category (city) with parent relationship
+                    child_index = category_skip_first + 1
+                    child_name = category_names[child_index]
+                    
+                    # Add parent to defaults for child category
+                    child_defaults = dict(category_defaults or {})
+                    if parent_id:
+                        child_defaults[category_parent_field] = parent_id
+                    
+                    child_docs = ensure_categories(
+                        client,
+                        [child_name],
+                        collection=category_collection,
+                        slug_field=category_slug_field,
+                        label_field=category_label_field,
+                        defaults=child_defaults,
+                        depth=category_depth,
+                    )
+                    
+                    # Process remaining categories (after parent and child)
+                    remaining_names = category_names[category_skip_first + 2:]
+                    if remaining_names:
+                        remaining_docs = ensure_categories(
+                            client,
+                            remaining_names,
+                            collection=category_collection,
+                            slug_field=category_slug_field,
+                            label_field=category_label_field,
+                            defaults=category_defaults,
+                            depth=category_depth,
+                        )
+                        # Combine: parent + child + remaining (skipped tags are excluded)
+                        category_docs = parent_docs + child_docs + remaining_docs
+                    else:
+                        category_docs = parent_docs + child_docs
+                else:
+                    # No hierarchy - process all categories normally
+                    category_docs = ensure_categories(
+                        client,
+                        category_names,
+                        collection=category_collection,
+                        slug_field=category_slug_field,
+                        label_field=category_label_field,
+                        defaults=category_defaults,
+                        depth=category_depth,
+                    )
+                
+                # Extract IDs from the returned documents
+                category_ids = []
+                for doc in category_docs:
+                    # Handle wrapped response (doc in doc)
+                    if isinstance(doc, Mapping) and "doc" in doc and isinstance(doc["doc"], Mapping):
+                        doc = doc["doc"]
+                    if isinstance(doc, Mapping):
+                        doc_id = doc.get("id")
+                        if doc_id is not None:
+                            category_ids.append(doc_id)
+                # Replace the string values with IDs
+                # If output field is different, remove old field and use new one
+                if category_output_field and category_output_field != category_field:
+                    del payload[category_field]
+                    payload[category_output_field] = category_ids
+                else:
+                    payload[category_field] = category_ids
 
     if featured_image_field and featured_image_field in payload:
         media_id = _ensure_featured_image(
@@ -411,6 +550,15 @@ def upload_articles_from_directory(
     media_defaults: Mapping[str, Any] | None = None,
     media_filename_field: str = "filename",
     media_depth: int | None = None,
+    category_field: str | None = None,
+    category_output_field: str | None = None,
+    category_collection: str = "categories",
+    category_slug_field: str = "slug",
+    category_label_field: str = "title",
+    category_parent_field: str | None = None,
+    category_skip_first: int = 0,
+    category_defaults: Mapping[str, Any] | None = None,
+    category_depth: int | None = None,
 ) -> List[Dict[str, Any]]:
     """Upload article files from ``directory`` using folder names as slug prefixes.
 
@@ -456,6 +604,15 @@ def upload_articles_from_directory(
             media_filename_field=media_filename_field,
             media_depth=media_depth,
             slug_prefix=slug_prefix,
+            category_field=category_field,
+            category_output_field=category_output_field,
+            category_collection=category_collection,
+            category_slug_field=category_slug_field,
+            category_label_field=category_label_field,
+            category_parent_field=category_parent_field,
+            category_skip_first=category_skip_first,
+            category_defaults=category_defaults,
+            category_depth=category_depth,
         )
         results.append(response)
 
